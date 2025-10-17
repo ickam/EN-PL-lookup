@@ -18,16 +18,17 @@
     a:hover { text-decoration: underline; }
     code { background: #f6f8fa; padding: .15rem .35rem; border-radius: .35rem; }
     .scroll { max-height: 360px; overflow: auto; padding-right: .5rem; }
+    .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   </style>
 </head>
 <body>
 <header>
   <h1>English → Polish Lookup</h1>
-  <p class="muted">Find the Polish Wikipedia article and dictionary translations (Diki, ProZ) for an English term or enwiki URL.</p>
+  <p class="muted">Enter an English term, an enwiki URL, or a ProZ URL.</p>
 </header>
 
 <form action="/" method="get">
-  <input type="text" name="q" placeholder="e.g. Apple, https://en.wikipedia.org/wiki/Golden_Retriever" value="{{ data.get('query','') }}">
+  <input type="text" name="q" placeholder="e.g. treadmill, https://en.wikipedia.org/wiki/Golden_Retriever, https://www.proz.com/search/?term=Chaperone&es=1" value="{{ data.get('query','') }}">
   <button type="submit">Search</button>
 </form>
 
@@ -36,39 +37,36 @@
     <div class="card">
       <strong>Resolved English title:</strong> {{ data.en_title }}
     </div>
-  {% else %}
-    <div class="card">
-      <strong>Couldn’t resolve an English Wikipedia title</strong>
-      <div class="muted">We’ll still show dictionary results below.</div>
-    </div>
   {% endif %}
 
-  <div class="card">
-    <h3>Polish Wikipedia</h3>
-    {% if data.wiki %}
-      <p><strong>PL title:</strong> {{ data.wiki.pl_title }}</p>
-      <p><a href="{{ data.wiki.pl_url }}" target="_blank" rel="noopener">Open on pl.wikipedia.org</a></p>
-    {% else %}
-      <p class="muted">No Polish article found.</p>
-    {% endif %}
-  </div>
-
-  <div class="card">
-    <h3>Diki.pl translations (all)</h3>
-    {% if data.diki and data.diki|length %}
-      <div class="scroll">
-        <ul class="list">
-          {% for t in data.diki %}
-            <li>{{ t }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% if data.en_title %}
-        <p><a target="_blank" rel="noopener" href="https://www.diki.pl/slownik-angielskiego?q={{ data.en_title|urlencode }}">Open full results on Diki.pl</a></p>
+  <div class="twocol">
+    <div class="card">
+      <h3>Polish Wikipedia</h3>
+      {% if data.wiki %}
+        <p><strong>PL title:</strong> {{ data.wiki.pl_title }}</p>
+        <p><a href="{{ data.wiki.pl_url }}" target="_blank" rel="noopener">Open on pl.wikipedia.org</a></p>
+      {% else %}
+        <p class="muted">No Polish article found.</p>
       {% endif %}
-    {% else %}
-      <p class="muted">No Diki results.</p>
-    {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>Diki.pl translations (all)</h3>
+      {% if data.diki and data.diki|length %}
+        <div class="scroll">
+          <ul class="list">
+            {% for t in data.diki %}
+              <li>{{ t }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% if data.diki_href %}
+          <p><a target="_blank" rel="noopener" href="{{ data.diki_href }}">Open full results on Diki.pl</a></p>
+        {% endif %}
+      {% else %}
+        <p class="muted">No Diki results.</p>
+      {% endif %}
+    </div>
   </div>
 
   <div class="card">
@@ -79,10 +77,8 @@
           <li>{{ t }}</li>
         {% endfor %}
       </ul>
-      {% if data.en_title %}
-        <p><a target="_blank" rel="noopener"
-              href="https://www.proz.com/search/?term={{ data.en_title|urlencode }}&source_lang=ENG&target_lang=POL">
-          Open on ProZ</a></p>
+      {% if data.proz_href %}
+        <p><a target="_blank" rel="noopener" href="{{ data.proz_href }}">Open on ProZ</a></p>
       {% endif %}
     {% else %}
       <p class="muted">No ProZ results.</p>
@@ -90,10 +86,25 @@
   </div>
 
   <div class="card">
+    <h3>ProZ EN → PL pairs (best-effort)</h3>
+    {% if data.proz_pairs and data.proz_pairs|length %}
+      <div class="scroll">
+        <ul class="list">
+          {% for p in data.proz_pairs %}
+            <li><strong>{{ p[0] }}</strong> → {{ p[1] }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% else %}
+      <p class="muted">No pairable entries detected.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
     <h3>API</h3>
-    <p>JSON: <code>/api/lookup?q=YOUR_QUERY&amp;proz_limit=5</code></p>
-    {% if data.query %}
-      <p>Try it for this query: <a href="/api/lookup?q={{ data.query|urlencode }}">/api/lookup?q={{ data.query|urlencode }}</a></p>
+    <p>JSON: <code>/api/lookup?q=YOUR_QUERY&amp;proz_limit=50&amp;proz_pairs_limit=25</code></p>
+    {% if data.api_link %}
+      <p>Try it for this query: <a href="{{ data.api_link }}">{{ data.api_link }}</a></p>
     {% endif %}
   </div>
 {% endif %}
