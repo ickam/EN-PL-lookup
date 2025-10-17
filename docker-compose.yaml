@@ -1,0 +1,10 @@
+services:
+  en2pl:
+    build: .
+    image: en2pl-web:latest
+    ports:
+      - "3428:3428"
+    environment:
+      - PORT=3428
+    restart: unless-stopped
+
