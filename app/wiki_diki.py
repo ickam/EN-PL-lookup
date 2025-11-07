@@ -5,11 +5,12 @@ import asyncio
 import re
 import time
 from typing import Dict, List, Optional, Tuple
+import urllib.parse
 
 import httpx
 from lxml import html
 
-USER_AGENT = "en2pl-web/1.3 (+https://localhost) httpx"
+USER_AGENT = "en2pl-web/1.4 (+https://localhost) httpx"
 HTTP_TIMEOUT = 5.0
 CACHE_TTL = 60 * 60 * 6  # 6 hours
 
@@ -58,6 +59,20 @@ def _cache_set(name: str, value, *parts):
     k = _akey(name, *parts)
     _cache[k] = (time.time(), value)
 
+# Safe helpers that accept a prebuilt key tuple
+def _cache_get_key(key: Tuple[str, Tuple]):
+    v = _cache.get(key)
+    if not v:
+        return None
+    ts, data = v
+    if time.time() - ts > CACHE_TTL:
+        _cache.pop(key, None)
+        return None
+    return data
+
+def _cache_set_key(key: Tuple[str, Tuple], value):
+    _cache[key] = (time.time(), value)
+
 # ---------------- Helpers ---------------------------
 
 def _clean_text(s: str) -> str:
@@ -68,11 +83,19 @@ def _clean_text(s: str) -> str:
 def _strip_parentheticals(s: str) -> str:
     return re.sub(r"\([^)]*\)", "", s).strip()
 
+def _uniq(seq: List[str]) -> List[str]:
+    out, seen = [], set()
+    for s in seq:
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
 # ---------------- Wikipedia / Wikidata ---------------
 
 async def resolve_en_title(term_or_url: str) -> Optional[str]:
-    key = ("resolve_en_title", term_or_url)
-    cached = _cache_get(*key)
+    key = ("resolve_en_title", (term_or_url,))
+    cached = _cache_get_key(key)
     if cached is not None:
         return cached
 
@@ -83,11 +106,11 @@ async def resolve_en_title(term_or_url: str) -> Optional[str]:
         title = raw.replace("_", " ")
         title = re.sub(r"%28", "(", title)
         title = re.sub(r"%29", ")", title)
-        _cache_set(*key, value=title)
+        _cache_set_key(key, title)
         return title
 
     if not s:
-        _cache_set(*key, value=None)
+        _cache_set_key(key, None)
         return None
 
     params = {
@@ -104,17 +127,17 @@ async def resolve_en_title(term_or_url: str) -> Optional[str]:
     except Exception:
         title = None
 
-    _cache_set(*key, value=title)
+    _cache_set_key(key, title)
     return title
 
 async def english_to_polish_wikipedia(en_title: str) -> Optional[Dict[str, str]]:
-    key = ("english_to_polish_wikipedia", en_title)
-    cached = _cache_get(*key)
+    key = ("english_to_polish_wikipedia", (en_title,))
+    cached = _cache_get_key(key)
     if cached is not None:
         return cached
 
     if not en_title:
-        _cache_set(*key, value=None)
+        _cache_set_key(key, None)
         return None
 
     # 1) Direct langlinks
@@ -133,7 +156,7 @@ async def english_to_polish_wikipedia(en_title: str) -> Optional[Dict[str, str]]
         ll = page.get("langlinks", [])
         if ll:
             out = {"en_title": en_title, "pl_title": ll[0]["title"], "pl_url": ll[0]["url"]}
-            _cache_set(*key, value=out)
+            _cache_set_key(key, out)
             return out
     except Exception:
         pass
@@ -160,30 +183,30 @@ async def english_to_polish_wikipedia(en_title: str) -> Optional[Dict[str, str]]
         wd = (await _aget("https://www.wikidata.org/w/api.php", params=wd_params)).json()
         pl = wd["entities"][qid]["sitelinks"]["plwiki"]
         out = {"en_title": en_title, "pl_title": pl["title"], "pl_url": pl["url"]}
-        _cache_set(*key, value=out)
+        _cache_set_key(key, out)
         return out
     except Exception:
-        _cache_set(*key, value=None)
+        _cache_set_key(key, None)
         return None
 
 # ---------------- Diki (UNLIMITED results) ----------
 
 async def diki_lookup(english_term: str) -> List[str]:
-    key = ("diki_lookup", english_term)
-    cached = _cache_get(*key)
+    key = ("diki_lookup", (english_term,))
+    cached = _cache_get_key(key)
     if cached is not None:
         return cached
 
     english_term = (english_term or "").strip()
     if not english_term:
-        _cache_set(*key, value=[])
+        _cache_set_key(key, [])
         return []
 
     url = "https://www.diki.pl/slownik-angielskiego"
     try:
         r = await _aget(url, params={"q": english_term})
     except Exception:
-        _cache_set(*key, value=[])
+        _cache_set_key(key, [])
         return []
 
     text = r.text or ""
@@ -193,13 +216,13 @@ async def diki_lookup(english_term: str) -> List[str]:
             r = await _aget(url, params={"q": english_term})
             text = r.text or ""
         except Exception:
-            _cache_set(*key, value=[])
+            _cache_set_key(key, [])
             return []
 
     try:
         doc = html.fromstring(text)
     except Exception:
-        _cache_set(*key, value=[])
+        _cache_set_key(key, [])
         return []
 
     results: List[str] = []
@@ -215,63 +238,170 @@ async def diki_lookup(english_term: str) -> List[str]:
             results.append(v)
 
     for li in li_nodes:
-        # 1) a.plainLink (preferred headword)
         for a in li.xpath('.//a[contains(@class,"plainLink")]/text()'):
             add(a)
-        # 2) span.hw
         for hw in li.xpath('.//span[contains(@class,"hw")]/text()'):
             add(hw)
-        # 3) Fallback: cleaned li text first token
         full = li.text_content() or ""
         full = _strip_parentheticals(full)
         token = re.split(r"[;,—–-]", full, maxsplit=1)[0]
         add(token)
 
     cleaned = [_clean_text(x) for x in results if x]
-    out = list(dict.fromkeys(cleaned))  # dedupe preserve order
-    _cache_set(*key, value=out)
+    out = _uniq(cleaned)
+    _cache_set_key(key, out)
     return out
 
-# ---------------- ProZ (limit kept; heavier pages) ---
+# ---------------- ProZ (URL or term) ----------------
 
-async def proz_lookup(english_term: str, max_results: int = 5) -> List[str]:
-    key = ("proz_lookup", english_term, max_results)
-    cached = _cache_get(*key)
+async def _fetch_proz(url: str, params: Optional[dict] = None) -> Optional[html.HtmlElement]:
+    try:
+        r = await _aget(url, params=params)
+        return html.fromstring(r.text or "")
+    except Exception:
+        return None
+
+def _extract_polish_terms(doc: html.HtmlElement) -> List[str]:
+    """
+    Heuristics to extract Polish terms from a ProZ search results page.
+    Returns a de-duplicated list of Polish headwords/translations.
+    """
+    pl_terms: List[str] = []
+
+    # 1) Scope to containers that mention "Polish" and pull obvious term nodes
+    containers = doc.xpath(
+        '//*[contains(translate(normalize-space(.),"POLISH","polish"),"polish")]/ancestor-or-self::*[self::section or self::article or self::div][1]'
+    )
+    for c in containers:
+        texts = c.xpath(
+            './/a[contains(@class,"term")]/text()'
+            ' | .//div[contains(@class,"term")]/text()'
+            ' | .//span[contains(@class,"term")]/text()'
+        )
+        pl_terms.extend([_clean_text(t) for t in texts])
+
+    # 2) Fallback: list items near a “Polish” label
+    if not pl_terms:
+        li_texts = doc.xpath('//*[contains(text(),"Polish")]/following::li[position()<=6]//text()')
+        pl_terms.extend([_clean_text(_strip_parentheticals(t)) for t in li_texts])
+
+    # 3) Broad fallback: any “term” class anywhere
+    if not pl_terms:
+        pl_terms.extend([_clean_text(t) for t in doc.xpath('//*[contains(@class,"term")]/text()')])
+
+    pl_terms = [t for t in pl_terms if t and t.lower() not in {"np.", "np", "itp.", "itd."}]
+    return _uniq(pl_terms)
+
+def _find_blocks(doc: html.HtmlElement):
+    blocks = doc.xpath('//article | //section | //div[contains(@class,"result") or contains(@class,"entry") or contains(@class,"card")]')
+    return blocks if blocks else [doc]
+
+def _extract_en_pl_pairs(doc: html.HtmlElement) -> List[Tuple[str, str]]:
+    pairs: List[Tuple[str, str]] = []
+    blocks = _find_blocks(doc)
+
+    for b in blocks:
+        en_scope = b.xpath('.//*[contains(translate(.,"ENGLISH","english"),"english")]')
+        pl_scope = b.xpath('.//*[contains(translate(.,"POLISH","polish"),"polish")]')
+        if not en_scope or not pl_scope:
+            continue
+
+        en_terms: List[str] = []
+        for n in en_scope:
+            en_terms += n.xpath(
+                './/a[contains(@class,"term")]/text()'
+                ' | .//div[contains(@class,"term")]/text()'
+                ' | .//span[contains(@class,"term")]/text()'
+            )
+            if not en_terms:
+                en_terms += n.xpath('.//strong/text() | .//b/text() | .//*[self::h1 or self::h2 or self::h3]/text()')
+        en_terms = [_clean_text(t) for t in en_terms if _clean_text(t)]
+
+        pl_terms: List[str] = []
+        for n in pl_scope:
+            pl_terms += n.xpath(
+                './/a[contains(@class,"term")]/text()'
+                ' | .//div[contains(@class,"term")]/text()'
+                ' | .//span[contains(@class,"term")]/text()'
+            )
+            if not pl_terms:
+                pl_terms += n.xpath('.//li[position()<=3]//text()')
+        pl_terms = [_clean_text(_strip_parentheticals(t)) for t in pl_terms if _clean_text(t)]
+
+        if en_terms and pl_terms:
+            for en in en_terms[:3]:
+                for pl in pl_terms[:5]:
+                    pairs.append((en, pl))
+
+    # de-dup pairs
+    uniq_pairs: List[Tuple[str, str]] = []
+    seen = set()
+    for en, pl in pairs:
+        key = (en, pl)
+        if en and pl and key not in seen:
+            seen.add(key)
+            uniq_pairs.append((en, pl))
+    return uniq_pairs
+
+async def proz_lookup(english_term_or_url: str, max_results: int = 50) -> List[str]:
+    """
+    Accepts either a raw English term (e.g., "chaperone") or a full ProZ URL
+    like "https://www.proz.com/search/?term=Chaperone&es=1".
+    Returns a list of Polish translations (deduped). Limited by `max_results`.
+    """
+    key = ("proz_lookup_v2", (english_term_or_url, max_results))
+    cached = _cache_get_key(key)
     if cached is not None:
         return cached
 
-    english_term = (english_term or "").strip()
-    if not english_term:
-        _cache_set(*key, value=[])
+    s = (english_term_or_url or "").strip()
+    doc = None
+
+    if s.lower().startswith("http"):
+        doc = await _fetch_proz(s, None)
+    else:
+        base = "https://www.proz.com/search/"
+        params = {"term": s, "source_lang": "ENG", "target_lang": "POL", "es": "1"}
+        doc = await _fetch_proz(base, params)
+
+    if doc is None:
+        _cache_set_key(key, [])
         return []
 
-    url = "https://www.proz.com/search/"
-    params = {"term": english_term, "source_lang": "ENG", "target_lang": "POL"}
-    try:
-        r = await _aget(url, params=params)
-    except Exception:
-        _cache_set(*key, value=[])
+    results = _extract_polish_terms(doc)
+    out = results[:max_results] if max_results and max_results > 0 else results
+    _cache_set_key(key, out)
+    return out
+
+async def proz_lookup_pairs(english_term_or_url: str, max_pairs: int = 25) -> List[Tuple[str, str]]:
+    """
+    Returns best-effort (EN, PL) pairs from a ProZ page/term.
+    If exact pairs can't be reliably derived, falls back to pairing the query term with each PL term.
+    """
+    key = ("proz_lookup_pairs_v1", (english_term_or_url, max_pairs))
+    cached = _cache_get_key(key)
+    if cached is not None:
+        return cached
+
+    s = (english_term_or_url or "").strip()
+    if s.lower().startswith("http"):
+        doc = await _fetch_proz(s, None)
+        query_term = urllib.parse.parse_qs(urllib.parse.urlparse(s).query).get("term", [s])[0]
+    else:
+        base = "https://www.proz.com/search/"
+        params = {"term": s, "source_lang": "ENG", "target_lang": "POL", "es": "1"}
+        doc = await _fetch_proz(base, params)
+        query_term = s
+
+    if doc is None:
+        _cache_set_key(key, [])
         return []
 
-    try:
-        doc = html.fromstring(r.text or "")
-    except Exception:
-        _cache_set(*key, value=[])
-        return []
+    pairs = _extract_en_pl_pairs(doc)
+    if not pairs:
+        pl_only = _extract_polish_terms(doc)
+        pairs = [(query_term, pl) for pl in pl_only]
 
-    texts: List[str] = []
-    texts += [t.strip() for t in doc.xpath('//div[contains(@class,"term")]/text()') if t.strip()]
-    texts += [t.strip() for t in doc.xpath('//a[contains(@class,"term")]/text()') if t.strip()]
-    if not texts:
-        texts += [t.strip() for t in doc.xpath('//*[contains(text(),"Polish")]/following::li[1]//text()') if t.strip()]
-
-    out: List[str] = []
-    for t in texts:
-        t = _clean_text(_strip_parentheticals(t))
-        if t and t not in out:
-            out.append(t)
-        if len(out) >= max_results:
-            break
-
-    _cache_set(*key, value=out)
+    out = pairs[:max_pairs] if max_pairs and max_pairs > 0 else pairs
+    _cache_set_key(key, out)
     return out
