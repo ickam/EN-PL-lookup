@@ -12,8 +12,6 @@ from .wiki_diki import (
     resolve_en_title,
     english_to_polish_wikipedia,
     diki_lookup,
-    proz_lookup,
-    proz_lookup_pairs,
     get_client,
 )
 from .dsl_parser import dsl_lookup
@@ -42,12 +40,8 @@ async def index(request: Request, q: Optional[str] = None):
 
         wiki_task = english_to_polish_wikipedia(en_title) if en_title else asyncio.sleep(0, result=None)
         diki_task = diki_lookup(term_for_dicts)
-        proz_terms_task = proz_lookup(q, max_results=50)  # pass q directly (URL or term)
-        proz_pairs_task = proz_lookup_pairs(q, max_pairs=25)
 
-        wiki, diki, proz_terms, proz_pairs = await asyncio.gather(
-            wiki_task, diki_task, proz_terms_task, proz_pairs_task
-        )
+        wiki, diki = await asyncio.gather(wiki_task, diki_task)
 
         # DSL lookup (synchronous, local)
         dsl_en_pl = dsl_lookup(term_for_dicts, direction="en-pl")
@@ -57,39 +51,41 @@ async def index(request: Request, q: Optional[str] = None):
         data["diki"] = diki
         data["dsl_en_pl"] = dsl_en_pl
         data["dsl_pl_en"] = dsl_pl_en
-        data["proz"] = proz_terms
-        data["proz_pairs"] = proz_pairs
 
         # Pre-encode helpful links
         if en_title:
             enc = quote_plus(en_title)
             data["diki_href"] = f"https://www.diki.pl/slownik-angielskiego?q={enc}"
-            data["proz_href"] = f"https://www.proz.com/search/?term={enc}&source_lang=ENG&target_lang=POL&es=1"
+
+        # Build ProZ URLs for both EN→PL and PL→EN
+        search_term = en_title or q
+        enc_term = quote_plus(search_term)
+        data["proz_en_pl_url"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1"
+        data["proz_pl_en_url"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=POL&target_lang=ENG&es=1"
+
         data["api_link"] = f"/api/lookup?q={quote_plus(q)}"
 
     return templates.TemplateResponse("index.html", {"request": request, "data": data})
 
 @app.get("/api/lookup")
 async def api_lookup(
-    q: str = Query(..., description="English term, enwiki URL, or a ProZ URL"),
-    proz_limit: int = Query(50, ge=1, le=100),
-    proz_pairs_limit: int = Query(25, ge=1, le=100),
+    q: str = Query(..., description="English term or enwiki URL"),
 ):
     en_title = await resolve_en_title(q)
     term_for_dicts = en_title or q
 
     wiki_task = english_to_polish_wikipedia(en_title) if en_title else asyncio.sleep(0, result=None)
     diki_task = diki_lookup(term_for_dicts)  # unlimited
-    proz_terms_task = proz_lookup(q, max_results=proz_limit)       # q may be a URL
-    proz_pairs_task = proz_lookup_pairs(q, max_pairs=proz_pairs_limit)
 
-    wiki, diki, proz_terms, proz_pairs = await asyncio.gather(
-        wiki_task, diki_task, proz_terms_task, proz_pairs_task
-    )
+    wiki, diki = await asyncio.gather(wiki_task, diki_task)
 
     # DSL lookup (synchronous, local)
     dsl_en_pl = dsl_lookup(term_for_dicts, direction="en-pl")
     dsl_pl_en = dsl_lookup(term_for_dicts, direction="pl-en")
+
+    # Build ProZ URLs
+    search_term = en_title or q
+    enc_term = quote_plus(search_term)
 
     return JSONResponse({
         "query": q,
@@ -98,8 +94,8 @@ async def api_lookup(
         "diki": diki,
         "dsl_en_pl": dsl_en_pl,
         "dsl_pl_en": dsl_pl_en,
-        "proz": proz_terms,
-        "proz_pairs": proz_pairs,
+        "proz_en_pl_url": f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1",
+        "proz_pl_en_url": f"https://www.proz.com/search/?term={enc_term}&source_lang=POL&target_lang=ENG&es=1",
     })
 
 @app.get("/healthz")
