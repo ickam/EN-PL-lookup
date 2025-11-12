@@ -46,11 +46,11 @@
       <h3>DSL Medical Dictionary (EN → PL)</h3>
       {% if data.dsl_en_pl %}
         <div class="scroll">
-          <ul class="list">
+          <p>
             {% for pair in data.dsl_en_pl.pairs %}
-              <li><strong>{{ pair[0] }}</strong> → {{ pair[1] }}</li>
+              <strong>{{ pair[0] }}</strong> → {{ pair[1] }}{% if not loop.last %}, {% endif %}
             {% endfor %}
-          </ul>
+          </p>
         </div>
       {% else %}
         <p class="muted">No EN → PL DSL entry found.</p>
@@ -61,11 +61,11 @@
       <h3>DSL Medical Dictionary (PL → EN)</h3>
       {% if data.dsl_pl_en %}
         <div class="scroll">
-          <ul class="list">
+          <p>
             {% for pair in data.dsl_pl_en.pairs %}
-              <li><strong>{{ pair[0] }}</strong> → {{ pair[1] }}</li>
+              <strong>{{ pair[0] }}</strong> → {{ pair[1] }}{% if not loop.last %}, {% endif %}
             {% endfor %}
-          </ul>
+          </p>
         </div>
       {% else %}
         <p class="muted">No PL → EN DSL entry found.</p>
