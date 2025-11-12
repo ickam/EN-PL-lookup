@@ -110,6 +110,7 @@ async def proz_proxy(
 ):
     """Proxy endpoint for ProZ search to bypass iframe restrictions."""
     from .wiki_diki import _aget
+    from lxml import html as lxml_html
     import re
 
     # Fetch ProZ search page
@@ -125,21 +126,102 @@ async def proz_proxy(
         response = await _aget(url, params=params)
         html_content = response.text
 
+        # Parse HTML
+        doc = lxml_html.fromstring(html_content)
+
+        # Find "All resources" section or main results container
+        # Try multiple selectors to find the results section
+        results_section = None
+
+        # Look for various possible containers
+        possible_selectors = [
+            '//h2[contains(text(), "All resources")]/following-sibling::*',
+            '//h3[contains(text(), "All resources")]/following-sibling::*',
+            '//*[contains(@class, "results")]',
+            '//*[contains(@class, "search-results")]',
+            '//main',
+            '//*[@id="search-results"]',
+        ]
+
+        # Try to find "All resources" heading and extract from there
+        all_resources_heading = doc.xpath('//h2[contains(text(), "All resources")] | //h3[contains(text(), "All resources")]')
+
+        if all_resources_heading:
+            # Get all content after "All resources"
+            heading = all_resources_heading[0]
+            results_html = lxml_html.tostring(heading, encoding='unicode')
+
+            # Get all following siblings
+            following = heading.xpath('./following-sibling::*')
+            for elem in following:
+                results_html += lxml_html.tostring(elem, encoding='unicode')
+
+        else:
+            # Fallback: try to find main results container
+            results_container = doc.xpath('//*[contains(@class, "search-results")] | //main | //*[@role="main"]')
+            if results_container:
+                results_html = lxml_html.tostring(results_container[0], encoding='unicode')
+            else:
+                # Last resort: use full body
+                results_html = html_content
+
+        # Filter out entries with wrong language pairs
+        # Look for language pair indicators and remove non-matching ones
+        doc_filtered = lxml_html.fromstring(results_html)
+
+        # Remove entries that don't match the requested language pair
+        # Common patterns: lang pairs shown as "ENG>POL", "ENG to POL", etc.
+        wrong_lang_indicators = []
+
+        # Build list of wrong language pairs to filter out
+        all_langs = ['ENG', 'POL', 'SPA', 'FRA', 'DEU', 'ITA', 'RUS', 'CHI', 'JPN', 'POR']
+        for lang1 in all_langs:
+            for lang2 in all_langs:
+                if not ((lang1 == source_lang and lang2 == target_lang) or
+                       (lang1 == target_lang and lang2 == source_lang)):
+                    wrong_lang_indicators.append(f"{lang1}>{lang2}")
+                    wrong_lang_indicators.append(f"{lang1} to {lang2}")
+                    wrong_lang_indicators.append(f"{lang1}-{lang2}")
+
+        # Remove elements containing wrong language pairs
+        for indicator in wrong_lang_indicators[:20]:  # Limit to avoid too many removals
+            elements = doc_filtered.xpath(f'//*[contains(text(), "{indicator}")]')
+            for elem in elements:
+                # Remove the parent container (likely a result entry)
+                parent = elem.getparent()
+                if parent is not None:
+                    grandparent = parent.getparent()
+                    if grandparent is not None:
+                        grandparent.remove(parent)
+
+        results_html = lxml_html.tostring(doc_filtered, encoding='unicode')
+
         # Rewrite relative URLs to absolute URLs
-        html_content = html_content.replace('href="/', 'href="https://www.proz.com/')
-        html_content = html_content.replace("href='/", "href='https://www.proz.com/")
-        html_content = html_content.replace('src="/', 'src="https://www.proz.com/')
-        html_content = html_content.replace("src='/", "src='https://www.proz.com/")
+        results_html = results_html.replace('href="/', 'href="https://www.proz.com/')
+        results_html = results_html.replace("href='/", "href='https://www.proz.com/")
+        results_html = results_html.replace('src="/', 'src="https://www.proz.com/')
+        results_html = results_html.replace("src='/", "src='https://www.proz.com/")
 
-        # Add base tag for better URL resolution
-        html_content = re.sub(
-            r'<head>',
-            '<head><base href="https://www.proz.com/">',
-            html_content,
-            count=1
-        )
+        # Build minimal HTML page with styles
+        final_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <base href="https://www.proz.com/">
+            <title>ProZ Results: {term}</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 1rem; }}
+                a {{ color: #2563eb; }}
+            </style>
+        </head>
+        <body>
+            {results_html}
+        </body>
+        </html>
+        """
 
-        return HTMLResponse(content=html_content)
+        return HTMLResponse(content=final_html)
     except Exception as e:
         error_html = f"""
         <html>
