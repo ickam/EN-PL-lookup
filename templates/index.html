@@ -103,28 +103,15 @@
     </div>
   </div>
 
-  <div class="twocol">
-    <div class="card">
-      <h3>ProZ (English → Polish)</h3>
-      {% if data.proz_en_pl_url %}
-        <a href="{{ data.proz_en_pl_url }}" target="_blank" rel="noopener" class="proz-link">
-          Search on ProZ.com (EN → PL) ↗
-        </a>
-      {% else %}
-        <p class="muted">No search term available.</p>
-      {% endif %}
-    </div>
-
-    <div class="card">
-      <h3>ProZ (Polish → English)</h3>
-      {% if data.proz_pl_en_url %}
-        <a href="{{ data.proz_pl_en_url }}" target="_blank" rel="noopener" class="proz-link">
-          Search on ProZ.com (PL → EN) ↗
-        </a>
-      {% else %}
-        <p class="muted">No search term available.</p>
-      {% endif %}
-    </div>
+  <div class="card">
+    <h3>ProZ (English ↔ Polish)</h3>
+    {% if data.proz_url %}
+      <a href="{{ data.proz_url }}" target="_blank" rel="noopener" class="proz-link">
+        Search on ProZ.com ↗
+      </a>
+    {% else %}
+      <p class="muted">No search term available.</p>
+    {% endif %}
   </div>
 
   <div class="card">
