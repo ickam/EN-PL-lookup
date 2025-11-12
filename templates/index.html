@@ -107,7 +107,7 @@
       <h3>ProZ (English → Polish)</h3>
       {% if data.proz_en_pl_url %}
         <iframe src="{{ data.proz_en_pl_url }}" class="proz-iframe" title="ProZ EN to PL"></iframe>
-        <p style="margin-top: 0.5rem;"><a target="_blank" rel="noopener" href="{{ data.proz_en_pl_url }}">Open in new tab</a></p>
+        <p style="margin-top: 0.5rem;"><a target="_blank" rel="noopener" href="{{ data.proz_en_pl_external }}">Open on ProZ.com</a></p>
       {% else %}
         <p class="muted">No search term available.</p>
       {% endif %}
@@ -117,7 +117,7 @@
       <h3>ProZ (Polish → English)</h3>
       {% if data.proz_pl_en_url %}
         <iframe src="{{ data.proz_pl_en_url }}" class="proz-iframe" title="ProZ PL to EN"></iframe>
-        <p style="margin-top: 0.5rem;"><a target="_blank" rel="noopener" href="{{ data.proz_pl_en_url }}">Open in new tab</a></p>
+        <p style="margin-top: 0.5rem;"><a target="_blank" rel="noopener" href="{{ data.proz_pl_en_external }}">Open on ProZ.com</a></p>
       {% else %}
         <p class="muted">No search term available.</p>
       {% endif %}

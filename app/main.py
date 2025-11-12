@@ -57,11 +57,13 @@ async def index(request: Request, q: Optional[str] = None):
             enc = quote_plus(en_title)
             data["diki_href"] = f"https://www.diki.pl/slownik-angielskiego?q={enc}"
 
-        # Build ProZ URLs for both EN→PL and PL→EN
+        # Build ProZ proxy URLs for both EN→PL and PL→EN
         search_term = en_title or q
         enc_term = quote_plus(search_term)
-        data["proz_en_pl_url"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1"
-        data["proz_pl_en_url"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=POL&target_lang=ENG&es=1"
+        data["proz_en_pl_url"] = f"/proz-proxy?term={enc_term}&source_lang=ENG&target_lang=POL"
+        data["proz_pl_en_url"] = f"/proz-proxy?term={enc_term}&source_lang=POL&target_lang=ENG"
+        data["proz_en_pl_external"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1"
+        data["proz_pl_en_external"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=POL&target_lang=ENG&es=1"
 
         data["api_link"] = f"/api/lookup?q={quote_plus(q)}"
 
@@ -94,9 +96,64 @@ async def api_lookup(
         "diki": diki,
         "dsl_en_pl": dsl_en_pl,
         "dsl_pl_en": dsl_pl_en,
+        "proz_en_pl_proxy": f"/proz-proxy?term={enc_term}&source_lang=ENG&target_lang=POL",
+        "proz_pl_en_proxy": f"/proz-proxy?term={enc_term}&source_lang=POL&target_lang=ENG",
         "proz_en_pl_url": f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1",
         "proz_pl_en_url": f"https://www.proz.com/search/?term={enc_term}&source_lang=POL&target_lang=ENG&es=1",
     })
+
+@app.get("/proz-proxy")
+async def proz_proxy(
+    term: str = Query(..., description="Search term"),
+    source_lang: str = Query("ENG", description="Source language"),
+    target_lang: str = Query("POL", description="Target language"),
+):
+    """Proxy endpoint for ProZ search to bypass iframe restrictions."""
+    from .wiki_diki import _aget
+    import re
+
+    # Fetch ProZ search page
+    url = "https://www.proz.com/search/"
+    params = {
+        "term": term,
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "es": "1"
+    }
+
+    try:
+        response = await _aget(url, params=params)
+        html_content = response.text
+
+        # Rewrite relative URLs to absolute URLs
+        html_content = html_content.replace('href="/', 'href="https://www.proz.com/')
+        html_content = html_content.replace("href='/", "href='https://www.proz.com/")
+        html_content = html_content.replace('src="/', 'src="https://www.proz.com/')
+        html_content = html_content.replace("src='/", "src='https://www.proz.com/")
+
+        # Add base tag for better URL resolution
+        html_content = re.sub(
+            r'<head>',
+            '<head><base href="https://www.proz.com/">',
+            html_content,
+            count=1
+        )
+
+        return HTMLResponse(content=html_content)
+    except Exception as e:
+        error_html = f"""
+        <html>
+        <head><title>ProZ Error</title></head>
+        <body style="font-family: sans-serif; padding: 2rem;">
+            <h2>Unable to load ProZ results</h2>
+            <p>Error: {str(e)}</p>
+            <p><a href="https://www.proz.com/search/?term={term}&source_lang={source_lang}&target_lang={target_lang}&es=1" target="_blank">
+                Open ProZ search in new window
+            </a></p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
 
 @app.get("/healthz")
 async def healthz():
