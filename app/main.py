@@ -16,6 +16,7 @@ from .wiki_diki import (
     proz_lookup_pairs,
     get_client,
 )
+from .dsl_parser import dsl_lookup
 
 app = FastAPI(title="EN → PL Lookup", version="1.4.0", debug=True)
 templates = Jinja2Templates(directory="templates")
@@ -48,8 +49,14 @@ async def index(request: Request, q: Optional[str] = None):
             wiki_task, diki_task, proz_terms_task, proz_pairs_task
         )
 
+        # DSL lookup (synchronous, local)
+        dsl_en_pl = dsl_lookup(term_for_dicts, direction="en-pl")
+        dsl_pl_en = dsl_lookup(term_for_dicts, direction="pl-en")
+
         data["wiki"] = wiki
         data["diki"] = diki
+        data["dsl_en_pl"] = dsl_en_pl
+        data["dsl_pl_en"] = dsl_pl_en
         data["proz"] = proz_terms
         data["proz_pairs"] = proz_pairs
 
@@ -80,11 +87,17 @@ async def api_lookup(
         wiki_task, diki_task, proz_terms_task, proz_pairs_task
     )
 
+    # DSL lookup (synchronous, local)
+    dsl_en_pl = dsl_lookup(term_for_dicts, direction="en-pl")
+    dsl_pl_en = dsl_lookup(term_for_dicts, direction="pl-en")
+
     return JSONResponse({
         "query": q,
         "resolved_en_title": en_title,
         "wikipedia": wiki,
         "diki": diki,
+        "dsl_en_pl": dsl_en_pl,
+        "dsl_pl_en": dsl_pl_en,
         "proz": proz_terms,
         "proz_pairs": proz_pairs,
     })

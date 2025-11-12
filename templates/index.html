@@ -41,6 +41,38 @@
 
   <div class="twocol">
     <div class="card">
+      <h3>DSL Medical Dictionary (EN → PL)</h3>
+      {% if data.dsl_en_pl %}
+        <div class="scroll">
+          <ul class="list">
+            {% for pair in data.dsl_en_pl.pairs %}
+              <li><strong>{{ pair[0] }}</strong> → {{ pair[1] }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <p class="muted">No EN → PL DSL entry found.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>DSL Medical Dictionary (PL → EN)</h3>
+      {% if data.dsl_pl_en %}
+        <div class="scroll">
+          <ul class="list">
+            {% for pair in data.dsl_pl_en.pairs %}
+              <li><strong>{{ pair[0] }}</strong> → {{ pair[1] }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <p class="muted">No PL → EN DSL entry found.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="twocol">
+    <div class="card">
       <h3>Polish Wikipedia</h3>
       {% if data.wiki %}
         <p><strong>PL title:</strong> {{ data.wiki.pl_title }}</p>

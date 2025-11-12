@@ -23,6 +23,7 @@ RUN pip install --upgrade pip \
 
 COPY app ./app
 COPY templates ./templates
+COPY EN-PL.dsl PL-ENG.dsl ./
 
 ENV PORT=3428
 EXPOSE 3428
