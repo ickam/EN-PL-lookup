@@ -57,11 +57,11 @@ async def index(request: Request, q: Optional[str] = None):
             enc = quote_plus(en_title)
             data["diki_href"] = f"https://www.diki.pl/slownik-angielskiego?q={enc}"
 
-        # Build ProZ URL for English-Polish (bidirectional)
+        # Build ProZ URL for English-Polish (uses correct parameters: from/to with ISO 639-2 codes)
         search_term = en_title or q
         enc_term = quote_plus(search_term)
-        # Search with ENG and POL languages (shows both EN→PL and PL→EN)
-        data["proz_url"] = f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1"
+        # Filter to eng→pol language pair
+        data["proz_url"] = f"https://www.proz.com/search/?term={enc_term}&from=eng&to=pol&es=1"
 
         data["api_link"] = f"/api/lookup?q={quote_plus(q)}"
 
@@ -83,7 +83,7 @@ async def api_lookup(
     dsl_en_pl = dsl_lookup(term_for_dicts, direction="en-pl")
     dsl_pl_en = dsl_lookup(term_for_dicts, direction="pl-en")
 
-    # Build ProZ URL
+    # Build ProZ URL with correct parameters
     search_term = en_title or q
     enc_term = quote_plus(search_term)
 
@@ -94,7 +94,7 @@ async def api_lookup(
         "diki": diki,
         "dsl_en_pl": dsl_en_pl,
         "dsl_pl_en": dsl_pl_en,
-        "proz_url": f"https://www.proz.com/search/?term={enc_term}&source_lang=ENG&target_lang=POL&es=1",
+        "proz_url": f"https://www.proz.com/search/?term={enc_term}&from=eng&to=pol&es=1",
     })
 
 @app.get("/healthz")
